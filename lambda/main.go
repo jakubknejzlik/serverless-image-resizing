@@ -70,6 +70,14 @@ func generateNefThumbnail(ctx context.Context, data []byte, width uint, height u
 	return generateImageThumbnail(ctx, resultData, width, height)
 }
 
+func generateThumbnailFromLocalFile(ctx context.Context, filename string, width uint, height uint) (res io.Reader, err error) {
+	data, err := os.ReadFile("./icons/" + filename)
+	if err != nil {
+		return
+	}
+	return generateImageThumbnail(ctx, data, width, height)
+}
+
 func generateThumbnailFromS3File(ctx context.Context, svc *s3.S3, svcUpload *s3manager.Uploader, bucket string, key string, thumbnail string, width uint, height uint) (err error) {
 	resp, err := svc.GetObjectWithContext(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(bucket),
@@ -98,11 +106,16 @@ func generateThumbnailFromS3File(ctx context.Context, svc *s3.S3, svcUpload *s3m
 	} else if contentType == "binary/octet-stream" {
 		r, err = generateNefThumbnail(ctx, data, width, height)
 		if err != nil {
+			r, err = generateThumbnailFromLocalFile(ctx, "file.png", width, height)
+		}
+		if err != nil {
 			return
 		}
 	} else {
-		err = fmt.Errorf("unknown format %s", contentType)
-		return
+		r, err = generateThumbnailFromLocalFile(ctx, "file.png", width, height)
+		if err != nil {
+			return
+		}
 	}
 
 	sourceBucket := os.Getenv("BUCKET")

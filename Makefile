@@ -1,6 +1,8 @@
 include .env
 export
 
+sso:
+	aws sso login
 init:
 	terraform init
 apply:
@@ -9,10 +11,10 @@ destroy:
 	terraform destroy
 
 build-lambda-function:
-	cd lambda && GO111MODULE=on GOARCH=amd64 GOOS=linux go build -o main main.go && zip ../lambda.zip main && rm main && cd ..
+	cd lambda && GO111MODULE=on GOARCH=amd64 GOOS=linux go build -o main main.go && cp -R ../icons ./icons && zip ../lambda.zip main ./icons/* && rm main && rm -r ./icons && cd ..
 
 test-thumbnail:
 	cd lambda && go run main.go
 
 test:
-	curl -I -L --max-redirs 5 https://dpjc5oprjprsh.cloudfront.net/infd-develop-files/24fee41d-85a7-4b91-9b5a-499a7f49e867-157
+	curl -I -L --max-redirs 5 $$TEST_URL
