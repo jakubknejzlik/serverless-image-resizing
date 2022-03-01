@@ -16,6 +16,9 @@ import (
 	"strconv"
 	"strings"
 
+	_ "golang.org/x/image/bmp"
+	_ "golang.org/x/image/tiff"
+
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go/aws"
@@ -23,18 +26,12 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/jeremytorres/rawparser"
+	"github.com/nf/cr2"
 	"github.com/nfnt/resize"
 )
 
-func generateImageThumbnail(ctx context.Context, data []byte, width uint, height uint) (res io.Reader, err error) {
-	img, _, err := image.Decode(bytes.NewReader(data))
-	fmt.Println("decoded", err)
-	if err != nil {
-		return
-	}
-
+func resizeImageThumbnail(ctx context.Context, img image.Image, width uint, height uint) (res io.Reader, err error) {
 	m := resize.Resize(width, height, img, resize.NearestNeighbor)
-
 	res, w := io.Pipe()
 	go func() {
 		defer w.Close()
@@ -47,11 +44,10 @@ func generateImageThumbnail(ctx context.Context, data []byte, width uint, height
 	return
 }
 
-func generateNefThumbnail(ctx context.Context, data []byte, width uint, height uint) (res io.Reader, err error) {
+func decodeNefImage(data []byte) (img image.Image, err error) {
 	tmpDir := os.TempDir()
 	sourceFile := path.Join(tmpDir, "file.nef")
 	os.WriteFile(sourceFile, data, 0777)
-
 	parser, _ := rawparser.NewNefParser(true)
 	info := &rawparser.RawFileInfo{
 		File:    sourceFile,
@@ -67,15 +63,34 @@ func generateNefThumbnail(ctx context.Context, data []byte, width uint, height u
 		return
 	}
 
-	return generateImageThumbnail(ctx, resultData, width, height)
+	img, _, err = image.Decode(bytes.NewReader(resultData))
+	return
 }
-
-func generateThumbnailFromLocalFile(ctx context.Context, filename string, width uint, height uint) (res io.Reader, err error) {
+func getIconImage(filename string) (img image.Image, err error) {
 	data, err := os.ReadFile("./icons/" + filename)
 	if err != nil {
 		return
 	}
-	return generateImageThumbnail(ctx, data, width, height)
+	img, _, err = image.Decode(bytes.NewReader(data))
+	return
+}
+
+func decodeImage(contentType string, data []byte) (img image.Image, err error) {
+	fmt.Println("object content type:", contentType)
+	img, err = decodeNefImage(data)
+	if err == nil {
+		return
+	}
+	img, _, err = image.Decode(bytes.NewReader(data))
+	if err == nil {
+		return
+	}
+	img, err = cr2.Decode(bytes.NewReader(data))
+	if err == nil {
+		return
+	}
+	img, err = getIconImage("file.png")
+	return
 }
 
 func generateThumbnailFromS3File(ctx context.Context, svc *s3.S3, svcUpload *s3manager.Uploader, bucket string, key string, thumbnail string, width uint, height uint) (err error) {
@@ -88,8 +103,6 @@ func generateThumbnailFromS3File(ctx context.Context, svc *s3.S3, svcUpload *s3m
 		return
 	}
 
-	var r io.Reader
-
 	data, err := ioutil.ReadAll(resp.Body)
 	fmt.Println("read all object data", len(data), err)
 	if err != nil {
@@ -98,24 +111,14 @@ func generateThumbnailFromS3File(ctx context.Context, svc *s3.S3, svcUpload *s3m
 
 	contentType := *resp.ContentType
 	fmt.Println("object content type:", contentType)
-	if contentType == "image/jpg" || contentType == "image/jpeg" || contentType == "image/png" || contentType == "image/gif" {
-		r, err = generateImageThumbnail(ctx, data, width, height)
-		if err != nil {
-			return
-		}
-	} else if contentType == "binary/octet-stream" {
-		r, err = generateNefThumbnail(ctx, data, width, height)
-		if err != nil {
-			r, err = generateThumbnailFromLocalFile(ctx, "file.png", width, height)
-		}
-		if err != nil {
-			return
-		}
-	} else {
-		r, err = generateThumbnailFromLocalFile(ctx, "file.png", width, height)
-		if err != nil {
-			return
-		}
+	img, err := decodeImage(contentType, data)
+	if err != nil {
+		return
+	}
+
+	r, err := resizeImageThumbnail(ctx, img, width, height)
+	if err != nil {
+		return
 	}
 
 	sourceBucket := os.Getenv("BUCKET")

@@ -13,6 +13,8 @@ destroy:
 build-lambda-function:
 	cd lambda && GO111MODULE=on GOARCH=amd64 GOOS=linux go build -o main main.go && cp -R ../icons ./icons && zip ../lambda.zip main ./icons/* && rm main && rm -r ./icons && cd ..
 
+deploy: build-lambda-function apply
+
 test-thumbnail:
 	cd lambda && go run main.go
 
