@@ -23,12 +23,13 @@ resource "aws_cloudfront_distribution" "main" {
   #     prefix          = "myprefix"
   #   }
 
-  #   aliases = ["mysite.example.com", "yoursite.example.com"]
+  aliases = ["${var.subdomain}.${var.domain}"]
 
   default_cache_behavior {
-    allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
-    cached_methods   = ["GET", "HEAD"]
-    target_origin_id = "S3Origin"
+    allowed_methods    = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    cached_methods     = ["GET", "HEAD"]
+    target_origin_id   = "S3Origin"
+    trusted_key_groups = [aws_cloudfront_key_group.main.id]
 
     forwarded_values {
       query_string = false
@@ -97,6 +98,27 @@ resource "aws_cloudfront_distribution" "main" {
   }
 
   viewer_certificate {
-    cloudfront_default_certificate = true
+    # cloudfront_default_certificate = true
+    acm_certificate_arn = data.aws_acm_certificate.thumbcert.arn
+    ssl_support_method  = "sni-only"
   }
+}
+
+resource "aws_cloudfront_public_key" "main" {
+  comment     = "image resizer public key"
+  encoded_key = tls_private_key.main.public_key_pem
+  name        = "image-resizer-key"
+}
+
+resource "aws_cloudfront_key_group" "main" {
+  comment = "image resizer key group"
+  items   = [aws_cloudfront_public_key.main.id]
+  name    = "image-resizer-key-group"
+}
+
+data "aws_acm_certificate" "thumbcert" {
+  provider    = aws.us-east-1
+  domain      = "*.${var.domain}"
+  statuses    = ["ISSUED"]
+  most_recent = true
 }

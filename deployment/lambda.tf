@@ -12,8 +12,10 @@ resource "aws_lambda_function" "main" {
 
   environment {
     variables = {
-      BUCKET       = var.bucket
-      REDIRECT_URL = "http://${aws_cloudfront_distribution.main.domain_name}/"
+      BUCKET          = var.bucket
+      REDIRECT_URL    = "http://${aws_cloudfront_distribution.main.domain_name}/"
+      PUBLIC_KEY_ID   = aws_cloudfront_public_key.main.id
+      PRIVATE_KEY_PEM = base64encode(tls_private_key.main.private_key_pem)
     }
   }
 }
